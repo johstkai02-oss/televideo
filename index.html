@@ -3,15 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TeleEmisora Video en Vivo</title>
-<script src="https://://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<title>TeleEmisora en Vivo</title>
 <style>
-  body { background: #070b12; color: #e2e8f0; font-family: monospace; display: flex; justify-content: center; padding: 15px; margin: 0; }
-  .panel { border: 1.5px solid #ef4444; border-radius: 16px; padding: 16px; width: 100%; max-width: 420px; background: #0d131f; box-shadow: 0 0 20px rgba(239, 68, 68, 0.15); }
+  body { background: #070b12; color: #e2e8f0; font-family: monospace; display: flex; justify-content: center; padding: 35px 15px 15px; margin: 0; }
+  .panel { border: 1.5px solid #ef4444; border-radius: 16px; padding: 16px; width: 100%; max-width: 420px; background: #0d131f; }
   h2 { color: #f87171; text-align: center; font-size: 15px; margin-top: 0; }
   video { width: 100%; aspect-ratio: 16/9; background: #000; border: 1px solid #334155; border-radius: 10px; display: block; margin-bottom: 12px; object-fit: cover; }
-  .id-box { background: #162032; border: 1px dashed #f87171; border-radius: 8px; padding: 10px; text-align: center; font-size: 13px; margin-bottom: 12px; color: #fca5a5; }
-  input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #162032; color: #fff; margin-bottom: 10px; font-family: inherit; }
+  .id-box { background: #162032; border: 1px dashed #4ade80; border-radius: 8px; padding: 10px; text-align: center; font-size: 13px; margin-bottom: 12px; color: #86efac; }
+  input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #162032; color: #fff; margin-bottom: 10px; font-family: inherit; text-align: center; font-size: 15px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
   button { padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 12px; color: #fff; cursor: pointer; }
   .btn-live { background: #dc2626; }
@@ -21,65 +20,51 @@
 </head>
 <body>
 <div class="panel">
-  <h2>📺 TELE-EMISORA EN VIVO (WEBRTC)</h2>
+  <h2>📺 TELE-EMISORA EN VIVO</h2>
   <video id="tvScreen" autoplay playsinline></video>
-  <div class="id-box">TU CANAL ID: <b id="myId">Conectando...</b></div>
-  <input type="text" id="targetId" placeholder="Pega aquí el Canal ID a sintonizar...">
+  <div class="id-box">ESTADO: <b id="myId">LISTO PARA CONECTAR</b></div>
+  <input type="text" id="canalInput" value="CANAL-1" placeholder="Nombre del canal (ej. CANAL-1)">
   <div class="grid">
     <button class="btn-live" onclick="iniciarEmision()">🎥 TRANSMITIR VIVO</button>
     <button class="btn-watch" onclick="verCanal()">📡 SINTONIZAR CANAL</button>
   </div>
-  <div class="log" id="logBox">> Elige Transmitir para abrir tu cámara o Sintonizar para ver otro canal.</div>
+  <div class="log" id="logBox">> Pon el mismo nombre de canal (ej. CANAL-1) en ambos dispositivos.</div>
 </div>
-<script>
+<script type="module">
+import { joinRoom } from 'https://esm.sh/trystero@0.20.0';
 const videoEl = document.getElementById('tvScreen');
 const log = (t) => document.getElementById('logBox').innerHTML = `> ${t}`;
-let localStream = null;
+let room = null, localStream = null;
 
-const canalId = 'TV-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-const peer = new Peer(canalId);
+function conectarSala() {
+  const canal = document.getElementById('canalInput').value.trim().toUpperCase() || 'CANAL-1';
+  if (room) room.leave();
+  room = joinRoom({ appId: 'johstkai02-televideo-live' }, canal);
+  document.getElementById('myId').textContent = `SALA ${canal} ACTIVA`;
+  room.onPeerStream((stream) => {
+    videoEl.srcObject = stream;
+    videoEl.muted = false;
+    log(`¡Recibiendo señal en vivo del ${canal}!`);
+  });
+  return canal;
+}
 
-peer.on('open', (id) => {
-  document.getElementById('myId').textContent = id;
-});
-
-peer.on('error', (err) => log(`Error de conexión: ${err.type}`));
-
-peer.on('call', (call) => {
-  if (localStream) {
-    call.answer(localStream);
-    log("¡Un espectador se conectó a tu transmisión!");
-  } else {
-    call.answer();
-  }
-});
-
-async function iniciarEmision() {
+window.iniciarEmision = async () => {
   try {
+    const canal = conectarSala();
     localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
     videoEl.srcObject = localStream;
     videoEl.muted = true;
-    log(`EN VIVO: Comparte tu Canal ID (${canalId}) para que te vean.`);
-  } catch (e) {
-    log("Error: Permite el acceso a la cámara y micrófono.");
-  }
-}
+    room.addStream(localStream);
+    room.onPeerJoin(() => room.addStream(localStream));
+    log(`EN VIVO en ${canal}: Abre el otro dispositivo y toca Sintonizar.`);
+  } catch (e) { log("Error: Permite el acceso a cámara y micrófono."); }
+};
 
-function verCanal() {
-  const remoteId = document.getElementById('targetId').value.trim().toUpperCase();
-  if (!remoteId) return log("Escribe el Canal ID del emisor primero.");
-
-  const canvas = document.createElement('canvas');
-  const dummyStream = canvas.captureStream();
-  const call = peer.call(remoteId, dummyStream);
-
-  log(`Sintonizando canal ${remoteId}...`);
-  call.on('stream', (remoteStream) => {
-    videoEl.srcObject = remoteStream;
-    videoEl.muted = false;
-    log(`¡Conectado al canal ${remoteId} en vivo!`);
-  });
-}
+window.verCanal = () => {
+  const canal = conectarSala();
+  log(`Sintonizando ${canal}... Esperando señal del emisor.`);
+};
 </script>
 </body>
 </html>
